@@ -2,54 +2,135 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>مخطط خريطة تكتيكي</title>
+    <title>لوحة تخطيط خريطة GTA V التفاعلية</title>
     <style>
         body {
             margin: 0;
-            background-color: #0b192c; /* لون خلفية تكتيكي شبيه بالبلوبرنت */
+            background-color: #0b192c;
             color: #fff;
             font-family: Arial, sans-serif;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
             height: 100vh;
+            overflow: hidden;
         }
-        .map-container {
-            width: 800px;
-            height: 500px;
-            border: 2px solid #1e3e62;
-            background-image: 
-                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-            background-size: 40px 40px; /* شبكة تخطيط هندسية */
-            position: relative;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
-        }
-        .zone {
-            position: absolute;
-            border: 1px dashed #ff6500;
-            background: rgba(255, 101, 0, 0.1);
+        .toolbar {
+            margin: 10px 0;
+            background: #1e3e62;
             padding: 10px;
-            font-size: 14px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            z-index: 10;
+        }
+        button, input[type="color"], input[type="file"] {
+            background: #0b192c;
+            color: #fff;
+            border: 1px solid #00ffee;
+            padding: 6px 12px;
+            border-radius: 4px;
             cursor: pointer;
-            transition: 0.3s;
+            font-weight: bold;
         }
-        .zone:hover {
-            background: rgba(255, 101, 0, 0.3);
+        button:hover {
+            background: #00ffee;
+            color: #0b192c;
         }
-        #zone-a { top: 50px; left: 100px; width: 150px; height: 100px; }
-        #zone-b { top: 200px; left: 350px; width: 200px; height: 120px; }
-        #zone-c { top: 80px; left: 600px; width: 120px; height: 200px; }
+        .canvas-container {
+            position: relative;
+            border: 2px solid #00ffee;
+            box-shadow: 0 0 20px rgba(0, 255, 238, 0.3);
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            /* استبدل الرابط أدناه برابط أو مسار صورة خريطة GTA V الخاصة بك */
+            background: url('https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1000&auto=format&fit=crop') no-repeat center center;
+            background-size: cover;
+        }
     </style>
 </head>
 <body>
 
-    <div class="map-container">
-        <!-- مناطق التخطيط -->
-        <div id="zone-a" class="zone">منطقة القاعدة (A)</div>
-        <div id="zone-b" class="zone">المنطقة الوسطى (B)</div>
-        <div id="zone-c" class="zone">منطقة الإمداد (C)</div>
+    <div class="toolbar">
+        <button id="drawBtn" onclick="setMode('draw')">قلم رسم</button>
+        <button id="textBtn" onclick="setMode('text')">إضافة كتابة</button>
+        <button id="eraseBtn" onclick="setMode('erase')">ممحاة</button>
+        <label>اللون: <input type="color" id="colorPicker" value="#00ffee"></label>
+        <button onclick="clearCanvas()">مسح الكل</button>
+        <label>إضافة صورة: <input type="file" id="imageLoader" accept="image/*"></label>
     </div>
+
+    <div class="canvas-container">
+        <canvas id="mapCanvas" width="900" height="500"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        let mode = 'draw'; // draw, text, erase
+        let isDrawing = false;
+        
+        // ضبط إعدادات القلم
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+
+        function setMode(newMode) {
+            mode = newMode;
+        }
+
+        // الرسم بالفأرة أو اللمس
+        canvas.addEventListener('mousedown', (e) => {
+            if (mode === 'draw' || mode === 'erase') {
+                isDrawing = true;
+                ctx.beginPath();
+                ctx.moveTo(e.offsetX, e.offsetY);
+            } else if (mode === 'text') {
+                let text = prompt('أكتب النص الذي تريد إضافته:');
+                if (text) {
+                    ctx.fillStyle = document.getElementById('colorPicker').value;
+                    ctx.font = '18px Arial';
+                    ctx.fillText(text, e.offsetX, e.offsetY);
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            if (mode === 'draw') {
+                ctx.strokeStyle = document.getElementById('colorPicker').value;
+                ctx.lineTo(e.offsetX, e.offsetY);
+                ctx.stroke();
+            } else if (mode === 'erase') {
+                ctx.clearRect(e.offsetX - 15, e.offsetY - 15, 30, 30);
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDrawing = false;
+        });
+
+        // مسح اللوحة كاملة
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // رفع صور إضافية ووضعها على الخريطة
+        document.getElementById('imageLoader').addEventListener('change', function(e) {
+            let reader = new FileReader();
+            reader.onload = function(event) {
+                let img = new Image();
+                img.onload = function() {
+                    // رسم الصورة في منتصف اللوحة كمثال
+                    ctx.drawImage(img, 100, 100, 100, 100);
+                }
+                img.src = event.target.result;
+            }
+            reader.readAsDataURL(e.target.files[0]);
+        });
+    </script>
 
 </body>
 </html>
