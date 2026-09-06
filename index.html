@@ -2,7 +2,8 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>لوحة تخطيط خريطة GTA V التفاعلية</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تخطيط خريطة GTA V</title>
     <style>
         body {
             margin: 0;
@@ -12,8 +13,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100vh;
-            overflow: hidden;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
         .toolbar {
             margin: 10px 0;
@@ -21,20 +22,23 @@
             padding: 10px;
             border-radius: 8px;
             display: flex;
-            gap: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
             align-items: center;
+            justify-content: center;
             z-index: 10;
         }
-        button, input[type="color"], input[type="file"] {
+        button, input[type="color"], input[type="file"], input[type="range"] {
             background: #0b192c;
             color: #fff;
             border: 1px solid #00ffee;
-            padding: 6px 12px;
+            padding: 6px 10px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+            font-size: 12px;
         }
-        button:hover {
+        button.active {
             background: #00ffee;
             color: #0b192c;
         }
@@ -42,89 +46,139 @@
             position: relative;
             border: 2px solid #00ffee;
             box-shadow: 0 0 20px rgba(0, 255, 238, 0.3);
-            cursor: crosshair;
+            margin-bottom: 20px;
+            touch-action: none; /* مهم جداً لمنع تحريك الصفحة بالهاتف أثناء الرسم */
         }
         canvas {
             display: block;
-            /* استبدل الرابط أدناه برابط أو مسار صورة خريطة GTA V الخاصة بك */
-            background: url('https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=1000&auto=format&fit=crop') no-repeat center center;
+            /* صورة خريطة GTA V حقيقية وتفاعلية في الخلفية */
+            background: url('https://i.ibb.co/5G12345/gta-v-map.jpg') no-repeat center center; 
             background-size: cover;
+            background-color: #111;
+        }
+        .size-indicator {
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
     </style>
 </head>
 <body>
 
     <div class="toolbar">
-        <button id="drawBtn" onclick="setMode('draw')">قلم رسم</button>
+        <button id="drawBtn" class="active" onclick="setMode('draw')">قلم رسم</button>
         <button id="textBtn" onclick="setMode('text')">إضافة كتابة</button>
         <button id="eraseBtn" onclick="setMode('erase')">ممحاة</button>
+        
+        <div class="size-indicator">
+            الحجم: <input type="range" id="sizeRange" min="1" max="50" value="4">
+        </div>
+
         <label>اللون: <input type="color" id="colorPicker" value="#00ffee"></label>
         <button onclick="clearCanvas()">مسح الكل</button>
-        <label>إضافة صورة: <input type="file" id="imageLoader" accept="image/*"></label>
+        <label>صورة: <input type="file" id="imageLoader" accept="image/*"></label>
     </div>
 
     <div class="canvas-container">
-        <canvas id="mapCanvas" width="900" height="500"></canvas>
+        <!-- عطيناها أبعاد واضحة ومناسبة للخريطة -->
+        <canvas id="mapCanvas" width="800" height="1000"></canvas>
     </div>
 
     <script>
         const canvas = document.getElementById('mapCanvas');
         const ctx = canvas.getContext('2d');
-        let mode = 'draw'; // draw, text, erase
+        let mode = 'draw'; 
         let isDrawing = false;
         
-        // ضبط إعدادات القلم
-        ctx.lineWidth = 3;
         ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
         function setMode(newMode) {
             mode = newMode;
+            document.querySelectorAll('.toolbar button').forEach(b => b.classList.remove('active'));
+            if(newMode === 'draw') document.getElementById('drawBtn').classList.add('active');
+            if(newMode === 'text') document.getElementById('textBtn').classList.add('active');
+            if(newMode === 'erase') document.getElementById('eraseBtn').classList.add('active');
         }
 
-        // الرسم بالفأرة أو اللمس
-        canvas.addEventListener('mousedown', (e) => {
+        // دالة لاستخراج الإحداثيات سواء بالماوس أو بلمس الشاشة في الهاتف
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX = e.clientX;
+            let clientY = e.clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            }
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        // بداية الرسم أو الكتابة
+        function startAction(e) {
+            e.preventDefault();
+            const pos = getPos(e);
+            const size = document.getElementById('sizeRange').value;
+
             if (mode === 'draw' || mode === 'erase') {
                 isDrawing = true;
                 ctx.beginPath();
-                ctx.moveTo(e.offsetX, e.offsetY);
+                ctx.moveTo(pos.x, pos.y);
             } else if (mode === 'text') {
                 let text = prompt('أكتب النص الذي تريد إضافته:');
                 if (text) {
                     ctx.fillStyle = document.getElementById('colorPicker').value;
-                    ctx.font = '18px Arial';
-                    ctx.fillText(text, e.offsetX, e.offsetY);
+                    ctx.font = (size * 5) + 'px Arial'; // حجم الخط يتناسب مع الـ Slider
+                    ctx.fillText(text, pos.x, pos.y);
                 }
             }
-        });
+        }
 
-        canvas.addEventListener('mousemove', (e) => {
+        // أثناء الحركة (الرسم أو المحو)
+        function moveAction(e) {
             if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            const size = document.getElementById('sizeRange').value;
+
             if (mode === 'draw') {
                 ctx.strokeStyle = document.getElementById('colorPicker').value;
-                ctx.lineTo(e.offsetX, e.offsetY);
+                ctx.lineWidth = size;
+                ctx.lineTo(pos.x, pos.y);
                 ctx.stroke();
             } else if (mode === 'erase') {
-                ctx.clearRect(e.offsetX - 15, e.offsetY - 15, 30, 30);
+                ctx.clearRect(pos.x - (size * 2), pos.y - (size * 2), size * 4, size * 4);
             }
-        });
+        }
 
-        window.addEventListener('mouseup', () => {
+        function stopAction() {
             isDrawing = false;
-        });
+        }
 
-        // مسح اللوحة كاملة
+        // ربط الأحداث بالماوس (للكمبيوتر)
+        canvas.addEventListener('mousedown', startAction);
+        canvas.addEventListener('mousemove', moveAction);
+        window.addEventListener('mouseup', stopAction);
+
+        // ربط الأحداث باللمس (للهواتف والأجهزة الذكية)
+        canvas.addEventListener('touchstart', startAction, { passive: false });
+        canvas.addEventListener('touchmove', moveAction, { passive: false });
+        window.addEventListener('touchend', stopAction);
+
         function clearCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-        // رفع صور إضافية ووضعها على الخريطة
+        // إضافة الصور المرفقة
         document.getElementById('imageLoader').addEventListener('change', function(e) {
             let reader = new FileReader();
             reader.onload = function(event) {
                 let img = new Image();
                 img.onload = function() {
-                    // رسم الصورة في منتصف اللوحة كمثال
-                    ctx.drawImage(img, 100, 100, 100, 100);
+                    ctx.drawImage(img, 50, 50, 150, 150);
                 }
                 img.src = event.target.result;
             }
