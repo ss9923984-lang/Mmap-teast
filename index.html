@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة تخطيط خريطة GTA V</title>
+    <title>خريطة GTA V التكتيكية مع الزوم والتحريك</title>
     <style>
         body {
             margin: 0;
@@ -13,97 +13,120 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh;
-            overflow-x: hidden;
+            height: 100vh;
+            overflow: hidden;
         }
         .toolbar {
-            margin: 10px 0;
+            margin: 8px 0;
             background: #1e3e62;
-            padding: 10px;
+            padding: 8px 12px;
             border-radius: 8px;
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
             justify-content: center;
             z-index: 10;
         }
-        button, input[type="color"], input[type="file"], input[type="range"] {
+        button, input[type="color"], input[type="range"] {
             background: #0b192c;
             color: #fff;
             border: 1px solid #00ffee;
-            padding: 6px 10px;
+            padding: 5px 10px;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
-            font-size: 12px;
+            font-size: 11px;
         }
         button.active {
             background: #00ffee;
             color: #0b192c;
         }
-        .canvas-container {
+        .viewport {
             position: relative;
+            width: 95vw;
+            height: 82vh;
             border: 2px solid #00ffee;
             box-shadow: 0 0 20px rgba(0, 255, 238, 0.3);
-            margin-bottom: 20px;
-            touch-action: none; /* مهم جداً لمنع تحريك الصفحة بالهاتف أثناء الرسم */
+            overflow: hidden;
+            background: #111;
+            touch-action: none;
+        }
+        #mapContainer {
+            position: absolute;
+            transform-origin: 0 0;
+            cursor: grab;
+        }
+        #mapContainer:active {
+            cursor: grabbing;
         }
         canvas {
             display: block;
-            /* صورة خريطة GTA V حقيقية وتفاعلية في الخلفية */
-            background: url('https://i.ibb.co/5G12345/gta-v-map.jpg') no-repeat center center; 
+            /* اسم الصورة الكامل والدقيق كما هو في مستودع GitHub الخاص بك */
+            background: url('why-did-they-change-the-colored-map-to-the-black-and-white-v0-ta2vj4x5q65c1.png') no-repeat center center;
             background-size: cover;
-            background-color: #111;
         }
-        .size-indicator {
-            font-size: 12px;
+        .size-box {
+            font-size: 11px;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 4px;
         }
     </style>
 </head>
 <body>
 
     <div class="toolbar">
-        <button id="drawBtn" class="active" onclick="setMode('draw')">قلم رسم</button>
+        <button id="panBtn" class="active" onclick="setMode('pan')">تحريك وزوم (Pan)</button>
+        <button id="drawBtn" onclick="setMode('draw')">قلم رسم</button>
         <button id="textBtn" onclick="setMode('text')">إضافة كتابة</button>
         <button id="eraseBtn" onclick="setMode('erase')">ممحاة</button>
         
-        <div class="size-indicator">
-            الحجم: <input type="range" id="sizeRange" min="1" max="50" value="4">
+        <div class="size-box">
+            الحجم: <input type="range" id="sizeRange" min="1" max="40" value="4">
         </div>
 
         <label>اللون: <input type="color" id="colorPicker" value="#00ffee"></label>
         <button onclick="clearCanvas()">مسح الكل</button>
-        <label>صورة: <input type="file" id="imageLoader" accept="image/*"></label>
+        <button onclick="resetZoom()">إعادة الضبط</button>
     </div>
 
-    <div class="canvas-container">
-        <!-- عطيناها أبعاد واضحة ومناسبة للخريطة -->
-        <canvas id="mapCanvas" width="800" height="1000"></canvas>
+    <div class="viewport" id="viewport">
+        <div id="mapContainer">
+            <!-- أبعاد الخريطة -->
+            <canvas id="mapCanvas" width="800" height="1100"></canvas>
+        </div>
     </div>
 
     <script>
+        const viewport = document.getElementById('viewport');
+        const container = document.getElementById('mapContainer');
         const canvas = document.getElementById('mapCanvas');
         const ctx = canvas.getContext('2d');
-        let mode = 'draw'; 
-        let isDrawing = false;
-        
+
+        let mode = 'pan'; // pan, draw, text, erase
+        let scale = 1, panX = 0, panY = 0;
+        let isDragging = false, isDrawing = false;
+        let startX = 0, startY = 0;
+        let lastTouchDist = 0;
+
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
 
         function setMode(newMode) {
             mode = newMode;
             document.querySelectorAll('.toolbar button').forEach(b => b.classList.remove('active'));
+            if(newMode === 'pan') document.getElementById('panBtn').classList.add('active');
             if(newMode === 'draw') document.getElementById('drawBtn').classList.add('active');
             if(newMode === 'text') document.getElementById('textBtn').classList.add('active');
             if(newMode === 'erase') document.getElementById('eraseBtn').classList.add('active');
         }
 
-        // دالة لاستخراج الإحداثيات سواء بالماوس أو بلمس الشاشة في الهاتف
-        function getPos(e) {
+        function updateTransform() {
+            container.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        }
+
+        function getCanvasPoint(e) {
             const rect = canvas.getBoundingClientRect();
             let clientX = e.clientX;
             let clientY = e.clientY;
@@ -112,78 +135,154 @@
                 clientY = e.touches[0].clientY;
             }
             return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
+                x: (clientX - rect.left) / scale,
+                y: (clientY - rect.top) / scale
             };
         }
 
-        // بداية الرسم أو الكتابة
-        function startAction(e) {
+        viewport.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const pos = getPos(e);
-            const size = document.getElementById('sizeRange').value;
+            const zoomIntensity = 0.1;
+            let prevScale = scale;
+            if (e.deltaY < 0) {
+                scale *= (1 + zoomIntensity);
+            } else {
+                scale /= (1 + zoomIntensity);
+            }
+            scale = Math.max(0.5, Math.min(scale, 5));
 
-            if (mode === 'draw' || mode === 'erase') {
+            const rect = viewport.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            panX = mouseX - (mouseX - panX) * (scale / prevScale);
+            panY = mouseY - (mouseY - panY) * (scale / prevScale);
+            updateTransform();
+        }, { passive: false });
+
+        viewport.addEventListener('mousedown', (e) => {
+            if (mode === 'pan') {
+                isDragging = true;
+                startX = e.clientX - panX;
+                startY = e.clientY - panY;
+            } else {
                 isDrawing = true;
-                ctx.beginPath();
-                ctx.moveTo(pos.x, pos.y);
-            } else if (mode === 'text') {
-                let text = prompt('أكتب النص الذي تريد إضافته:');
-                if (text) {
-                    ctx.fillStyle = document.getElementById('colorPicker').value;
-                    ctx.font = (size * 5) + 'px Arial'; // حجم الخط يتناسب مع الـ Slider
-                    ctx.fillText(text, pos.x, pos.y);
+                const pt = getCanvasPoint(e);
+                const size = document.getElementById('sizeRange').value;
+                if (mode === 'draw' || mode === 'erase') {
+                    ctx.beginPath();
+                    ctx.moveTo(pt.x, pt.y);
+                } else if (mode === 'text') {
+                    let text = prompt('أكتب النص:');
+                    if (text) {
+                        ctx.fillStyle = document.getElementById('colorPicker').value;
+                        ctx.font = (size * 4 + 8) + 'px Arial';
+                        ctx.fillText(text, pt.x, pt.y);
+                    }
                 }
             }
-        }
+        });
 
-        // أثناء الحركة (الرسم أو المحو)
-        function moveAction(e) {
-            if (!isDrawing) return;
-            e.preventDefault();
-            const pos = getPos(e);
-            const size = document.getElementById('sizeRange').value;
-
-            if (mode === 'draw') {
-                ctx.strokeStyle = document.getElementById('colorPicker').value;
-                ctx.lineWidth = size;
-                ctx.lineTo(pos.x, pos.y);
-                ctx.stroke();
-            } else if (mode === 'erase') {
-                ctx.clearRect(pos.x - (size * 2), pos.y - (size * 2), size * 4, size * 4);
+        viewport.addEventListener('mousemove', (e) => {
+            if (isDragging && mode === 'pan') {
+                panX = e.clientX - startX;
+                panY = e.clientY - startY;
+                updateTransform();
+            } else if (isDrawing) {
+                const pt = getCanvasPoint(e);
+                const size = document.getElementById('sizeRange').value;
+                if (mode === 'draw') {
+                    ctx.strokeStyle = document.getElementById('colorPicker').value;
+                    ctx.lineWidth = size;
+                    ctx.lineTo(pt.x, pt.y);
+                    ctx.stroke();
+                } else if (mode === 'erase') {
+                    ctx.clearRect(pt.x - (size * 2), pt.y - (size * 2), size * 4, size * 4);
+                }
             }
-        }
+        });
 
-        function stopAction() {
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
             isDrawing = false;
-        }
+        });
 
-        // ربط الأحداث بالماوس (للكمبيوتر)
-        canvas.addEventListener('mousedown', startAction);
-        canvas.addEventListener('mousemove', moveAction);
-        window.addEventListener('mouseup', stopAction);
+        viewport.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2 && mode === 'pan') {
+                lastTouchDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+            } else if (e.touches.length === 1) {
+                if (mode === 'pan') {
+                    isDragging = true;
+                    startX = e.touches[0].clientX - panX;
+                    startY = e.touches[0].clientY - panY;
+                } else {
+                    isDrawing = true;
+                    const pt = getCanvasPoint(e.touches[0]);
+                    const size = document.getElementById('sizeRange').value;
+                    if (mode === 'draw' || mode === 'erase') {
+                        ctx.beginPath();
+                        ctx.moveTo(pt.x, pt.y);
+                    } else if (mode === 'text') {
+                        let text = prompt('أكتب النص:');
+                        if (text) {
+                            ctx.fillStyle = document.getElementById('colorPicker').value;
+                            ctx.font = (size * 4 + 8) + 'px Arial';
+                            ctx.fillText(text, pt.x, pt.y);
+                        }
+                    }
+                }
+            }
+        }, { passive: false });
 
-        // ربط الأحداث باللمس (للهواتف والأجهزة الذكية)
-        canvas.addEventListener('touchstart', startAction, { passive: false });
-        canvas.addEventListener('touchmove', moveAction, { passive: false });
-        window.addEventListener('touchend', stopAction);
+        viewport.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 2 && mode === 'pan') {
+                let dist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                let factor = dist / lastTouchDist;
+                scale = Math.max(0.5, Math.min(scale * factor, 5));
+                lastTouchDist = dist;
+                updateTransform();
+            } else if (e.touches.length === 1) {
+                if (isDragging && mode === 'pan') {
+                    panX = e.touches[0].clientX - startX;
+                    panY = e.touches[0].clientY - startY;
+                    updateTransform();
+                } else if (isDrawing) {
+                    const pt = getCanvasPoint(e.touches[0]);
+                    const size = document.getElementById('sizeRange').value;
+                    if (mode === 'draw') {
+                        ctx.strokeStyle = document.getElementById('colorPicker').value;
+                        ctx.lineWidth = size;
+                        ctx.lineTo(pt.x, pt.y);
+                        ctx.stroke();
+                    } else if (mode === 'erase') {
+                        ctx.clearRect(pt.x - (size * 2), pt.y - (size * 2), size * 4, size * 4);
+                    }
+                }
+            }
+        }, { passive: false });
+
+        window.addEventListener('touchend', () => {
+            isDragging = false;
+            isDrawing = false;
+        });
 
         function clearCanvas() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-        // إضافة الصور المرفقة
-        document.getElementById('imageLoader').addEventListener('change', function(e) {
-            let reader = new FileReader();
-            reader.onload = function(event) {
-                let img = new Image();
-                img.onload = function() {
-                    ctx.drawImage(img, 50, 50, 150, 150);
-                }
-                img.src = event.target.result;
-            }
-            reader.readAsDataURL(e.target.files[0]);
-        });
+        function resetZoom() {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+        }
     </script>
 
 </body>
